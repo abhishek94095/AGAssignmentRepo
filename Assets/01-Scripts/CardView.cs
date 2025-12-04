@@ -1,61 +1,97 @@
 using UnityEngine;
 using DG.Tweening;
+using System;
 
-[RequireComponent(typeof(SpriteRenderer))]
 public class CardView : MonoBehaviour
 {
     public int CardId { get; private set; }
 
-    private SpriteRenderer _renderer;
-    private Sprite _frontSprite;
-    private Sprite _backSprite;
+    [SerializeField] private SpriteRenderer backSprite, cardSprite, cardObject; // SpriteRenderer on BackBG
 
-    private bool _isFrontShowing;
-    private bool _isAnimating;
+    [Header("Flip Settings")]
+    [SerializeField] private float flipDuration = 0.3f;
+    [SerializeField] private Ease flipEase = Ease.OutQuad;
 
-    public float flipDuration = 0.3f;
-    public Ease flipEase = Ease.OutQuad;
+    private bool isFrontShowing;
+    private bool isAnimating;
     private Vector3 originalScale;
+
+    // === NEW ===
+    // who is allowed to flip this card (set from controller)
+    public Func<CardView, bool> CanFlipCallback;
+
+    // invoked when flip animation finishes
+    public Action<CardView> OnFlipCompleted;
+
+    public bool IsFrontShowing => isFrontShowing;   // read-only for controller
 
     private void Awake()
     {
-        _renderer = GetComponent<SpriteRenderer>();
         originalScale = transform.localScale;
+
+        // Default state: face down
+        ShowBack();
     }
 
-    public void Initialize(int id, Sprite front, Sprite back, bool faceDown = true)
+    // Only sprite is passed. (Using as "front" image as you currently do.)
+    public void Initialize(int id, Sprite cardSprite)
     {
         CardId = id;
-        _frontSprite = front;
-        _backSprite = back;
-        _renderer.sprite = faceDown ? _backSprite : _frontSprite;
-        _isFrontShowing = !faceDown;
+
+        if (this.backSprite != null && cardSprite != null)
+            this.cardSprite.sprite = cardSprite;
+    }
+
+    private void ShowFront()
+    {
+        // your current front/back logic
+        cardObject.enabled = false;
+        isFrontShowing = true;
+    }
+
+    private void ShowBack()
+    {
+        cardObject.enabled = true;
+        isFrontShowing = false;
     }
 
     public void Flip()
     {
-        if (_isAnimating) return;
-        _isAnimating = true;
+        // if (isAnimating) return;
+        // isAnimating = true;
 
-        bool showFront = !_isFrontShowing;
+        bool nextIsFront = !isFrontShowing;
 
         Sequence seq = DOTween.Sequence();
 
+        // Scale to 0 (flip mid-way)
         seq.Append(transform.DOScaleX(0f, flipDuration * 0.5f).SetEase(flipEase));
 
+        // Swap which side is active
         seq.AppendCallback(() =>
         {
-            _renderer.sprite = showFront ? _frontSprite : _backSprite;
-            _isFrontShowing = showFront;
+            if (nextIsFront) ShowFront();
+            else ShowBack();
         });
 
-        seq.Append(transform.DOScaleX(originalScale.x, flipDuration * 0.5f).SetEase(flipEase));
+        // Scale back to original
+        seq.Append(transform.DOScaleX(1f, flipDuration * 0.5f).SetEase(flipEase));
 
-        seq.OnComplete(() => _isAnimating = false);
+        seq.OnComplete(() =>
+        {
+            // isAnimating = false;
+
+            // === NEW ===
+            OnFlipCompleted?.Invoke(this);
+        });
     }
 
     private void OnMouseDown()
     {
+        // === UPDATED: go through controller if assigned ===
+        if (CanFlipCallback != null && !CanFlipCallback(this))
+            return;
+
         Flip();
     }
 }
