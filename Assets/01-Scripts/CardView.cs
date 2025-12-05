@@ -1,97 +1,105 @@
-using UnityEngine;
-using DG.Tweening;
 using System;
+using DG.Tweening;
+using UnityEngine;
 
 public class CardView : MonoBehaviour
 {
     public int CardId { get; private set; }
+    public int CardIndex { get; private set; } = -1;
+    public bool IsFrontShowing => isFrontSideShowing;
 
-    [SerializeField] private SpriteRenderer backSprite, cardSprite, cardObject; // SpriteRenderer on BackBG
+    [SerializeField] private SpriteRenderer FrontSpriteRenderer;
+    [SerializeField] private SpriteRenderer CardBackRenderer;
 
-    [Header("Flip Settings")]
-    [SerializeField] private float flipDuration = 0.3f;
-    [SerializeField] private Ease flipEase = Ease.OutQuad;
+    [SerializeField] private float FlipDuration = 0.3f;
+    [SerializeField] private Ease FlipEase = Ease.OutQuad;
 
-    private bool isFrontShowing;
-    private bool isAnimating;
-    private Vector3 originalScale;
-
-    // === NEW ===
-    // who is allowed to flip this card (set from controller)
     public Func<CardView, bool> CanFlipCallback;
+    public Action<CardView> FlipCompletedCallback;
 
-    // invoked when flip animation finishes
-    public Action<CardView> OnFlipCompleted;
-
-    public bool IsFrontShowing => isFrontShowing;   // read-only for controller
+    private bool isFrontSideShowing;
+    private Vector3 originalScale;
 
     private void Awake()
     {
         originalScale = transform.localScale;
-
-        // Default state: face down
         ShowBack();
     }
 
-    // Only sprite is passed. (Using as "front" image as you currently do.)
-    public void Initialize(int id, Sprite cardSprite)
+    public void Initialize(int cardId, Sprite frontSprite)
     {
-        CardId = id;
+        CardId = cardId;
 
-        if (this.backSprite != null && cardSprite != null)
-            this.cardSprite.sprite = cardSprite;
+        if (FrontSpriteRenderer != null && frontSprite != null)
+        {
+            FrontSpriteRenderer.sprite = frontSprite;
+        }
+    }
+
+    public void SetCardIndex(int index)
+    {
+        CardIndex = index;
+    }
+
+    public void Flip(bool isInitialFlip = false)
+    {
+        bool showFrontSide = !isFrontSideShowing;
+
+        Sequence flipSequence = DOTween.Sequence();
+
+        flipSequence.Append(transform.DOScaleX(0f, FlipDuration * 0.5f).SetEase(FlipEase));
+
+        flipSequence.AppendCallback(() =>
+        {
+            if (showFrontSide)
+            {
+                ShowFront();
+            }
+            else
+            {
+                ShowBack();
+            }
+        });
+
+        flipSequence.Append(transform.DOScaleX(originalScale.x, FlipDuration * 0.5f).SetEase(FlipEase));
+
+        flipSequence.OnComplete(() =>
+        {
+            if (!isInitialFlip)
+            {
+                FlipCompletedCallback?.Invoke(this);
+            }
+        });
     }
 
     private void ShowFront()
     {
-        // your current front/back logic
-        cardObject.enabled = false;
-        isFrontShowing = true;
+        if (CardBackRenderer != null)
+        {
+            CardBackRenderer.enabled = false;
+        }
+
+        isFrontSideShowing = true;
     }
 
     private void ShowBack()
     {
-        cardObject.enabled = true;
-        isFrontShowing = false;
-    }
-
-    public void Flip()
-    {
-        // if (isAnimating) return;
-        // isAnimating = true;
-
-        bool nextIsFront = !isFrontShowing;
-
-        Sequence seq = DOTween.Sequence();
-
-        // Scale to 0 (flip mid-way)
-        seq.Append(transform.DOScaleX(0f, flipDuration * 0.5f).SetEase(flipEase));
-
-        // Swap which side is active
-        seq.AppendCallback(() =>
+        if (CardBackRenderer != null)
         {
-            if (nextIsFront) ShowFront();
-            else ShowBack();
-        });
+            CardBackRenderer.enabled = true;
+        }
 
-        // Scale back to original
-        seq.Append(transform.DOScaleX(1f, flipDuration * 0.5f).SetEase(flipEase));
-
-        seq.OnComplete(() =>
-        {
-            // isAnimating = false;
-
-            // === NEW ===
-            OnFlipCompleted?.Invoke(this);
-        });
+        isFrontSideShowing = false;
     }
 
     private void OnMouseDown()
     {
-        // === UPDATED: go through controller if assigned ===
         if (CanFlipCallback != null && !CanFlipCallback(this))
+        {
             return;
+        }
 
         Flip();
+        SoundManager.Instance?.Play(SoundType.Flip);
     }
 }

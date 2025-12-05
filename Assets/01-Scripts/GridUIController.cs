@@ -3,29 +3,35 @@ using UnityEngine;
 [System.Serializable]
 public struct GridPresetConfig
 {
-    public int id;
-    public int rows;
-    public int columns;
+    public int Id;
+    public int Rows;
+    public int Columns;
 }
 
 public class GridUIController : MonoBehaviour
 {
-    public SpriteGridAutoFit grid;
-    public GridPresetConfig[] configs;
+    [SerializeField] private SpriteGridAutoFit GridLayout;
+    [SerializeField] private GridPresetConfig[] GridPresets;
 
-    public void SetGrid(int id)
+    public GridPresetConfig[] CurrentGridPresents => GridPresets;
+
+    public void SetGrid(int presetId)
     {
-        foreach (var config in configs)
+        for (int i = 0; i < GridPresets.Length; i++)
         {
-            if (config.id == id)
+            GridPresetConfig config = GridPresets[i];
+            if (config.Id != presetId)
             {
-                grid.rows = config.rows;
-                grid.columns = config.columns;
-                grid.RebuildGrid();
-                return;
+                continue;
             }
-        }
 
-        Debug.LogWarning($"GridUIController: No config found for ID {id}");
+            GridLayout.ConfigureGrid(config.Rows, config.Columns, config.Id);
+            return;
+        }
+    }
+
+    public void DestroyCurrentGrid()
+    {
+        GridLayout.DestroyGridObjects();
     }
 }

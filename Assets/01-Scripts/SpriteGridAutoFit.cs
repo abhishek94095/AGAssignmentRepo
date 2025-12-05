@@ -1,137 +1,200 @@
 using System.Collections.Generic;
+using DG.Tweening;
 using UnityEngine;
 
 public class SpriteGridAutoFit : MonoBehaviour
 {
-    [Header("Grid Size")]
-    [Min(1)] public int rows = 2;
-    [Min(1)] public int columns = 2;
+    [SerializeField] private int Rows = 2;
+    [SerializeField] private int Columns = 2;
 
-    [Header("Card Prefab")]
-    public GameObject cardPrefab;
+    [SerializeField] private CardView CardPrefab;
+    [SerializeField] private Camera TargetCamera;
 
-    [Header("Camera")]
-    public Camera targetCamera;
+    [SerializeField] private float CardSize = 1f;
+    [SerializeField] private float SpacingX = 0.1f;
+    [SerializeField] private float SpacingY = 0.1f;
 
-    [Header("Card Layout")]
-    public float cardSize = 1f;
-    public float spacingX = 0.1f;
-    public float spacingY = 0.1f;
+    [SerializeField] private float MarginX = 0.5f;
+    [SerializeField] private float MarginY = 0.5f;
 
-    [Header("Grid Margin")]
-    public float marginX = 0.5f;
-    public float marginY = 0.5f;
+    [SerializeField] private CardSpriteHandlerSO CardSpriteDatabase;
 
-    [Header("Card Assets")]
-    public Sprite backSprite;
-    public CardSpriteHandlerSO cardSpriteDataSO;
+    [SerializeField] private int CurrentGridId;
 
     private void Start()
     {
-        if (targetCamera == null)
-            targetCamera = Camera.main;
+        if (TargetCamera == null)
+        {
+            TargetCamera = Camera.main;
+        }
 
-        if (cardSpriteDataSO != null)
-            cardSpriteDataSO.Initialize();
+        if (CardSpriteDatabase != null)
+        {
+            CardSpriteDatabase.Initialize();
+        }
     }
 
-    public void DestroyGameObjects()
+    public void ConfigureGrid(int rows, int columns, int gridId)
     {
-        foreach (Transform child in transform)
-            Destroy(child.gameObject);
+        Rows = rows;
+        Columns = columns;
+        CurrentGridId = gridId;
+        RebuildGrid();
+    }
+
+    public void DestroyGridObjects()
+    {
+        for (int childIndex = transform.childCount - 1; childIndex >= 0; childIndex--)
+        {
+            Transform childTransform = transform.GetChild(childIndex);
+            Destroy(childTransform.gameObject);
+        }
     }
 
     [ContextMenu("Rebuild Grid")]
     public void RebuildGrid()
     {
-        if (cardPrefab == null || cardSpriteDataSO == null)
+        if (CardPrefab == null || CardSpriteDatabase == null)
         {
-            Debug.LogError("Missing cardPrefab or CardSpriteHandlerSO");
             return;
         }
 
-        DestroyGameObjects();
+        DestroyGridObjects();
 
-        float totalWidth = columns * cardSize + (columns - 1) * spacingX;
-        float totalHeight = rows * cardSize + (rows - 1) * spacingY;
+        float totalWidth = Columns * CardSize + (Columns - 1) * SpacingX;
+        float totalHeight = Rows * CardSize + (Rows - 1) * SpacingY;
 
-        float reqHeight = totalHeight / 2f + marginY;
-        float reqHeightFromWidth = (totalWidth / (2f * targetCamera.aspect)) + marginX;
-        targetCamera.orthographicSize = Mathf.Max(reqHeight, reqHeightFromWidth);
+        float requiredHeight = totalHeight / 2f + MarginY;
+        float requiredHeightFromWidth = totalWidth / (2f * TargetCamera.aspect) + MarginX;
+        TargetCamera.orthographicSize = Mathf.Max(requiredHeight, requiredHeightFromWidth);
 
-        Vector3 center = targetCamera.transform.position;
-        center.z = 0;
+        Vector3 cameraCenter = TargetCamera.transform.position;
+        cameraCenter.z = 0f;
 
-        float startX = center.x - totalWidth / 2f + cardSize / 2f;
-        float startY = center.y + totalHeight / 2f - cardSize / 2f;
+        float startX = cameraCenter.x - totalWidth / 2f + CardSize / 2f;
+        float startY = cameraCenter.y + totalHeight / 2f - CardSize / 2f;
 
-        SpriteRenderer sr = cardPrefab.GetComponent<SpriteRenderer>() ?? cardPrefab.GetComponentInChildren<SpriteRenderer>();
-        float scaleFactor = cardSize / Mathf.Max(sr.sprite.bounds.size.x, sr.sprite.bounds.size.y);
+        SpriteRenderer spriteRenderer = CardPrefab.GetComponent<SpriteRenderer>() ?? CardPrefab.GetComponentInChildren<SpriteRenderer>();
+        float scaleFactor = CardSize / Mathf.Max(spriteRenderer.sprite.bounds.size.x, spriteRenderer.sprite.bounds.size.y);
 
-        int totalSlots = rows * columns;
-        bool isEven = (rows * columns) % 2 == 0;
-        if (!isEven)
+        int totalSlots = Rows * Columns;
+        bool isEvenSlotCount = totalSlots % 2 == 0;
+
+        if (!isEvenSlotCount)
         {
-            // one slot will be skipped
             totalSlots -= 1;
         }
 
-        // === NEW: generate shuffled pair IDs ===
-        List<int> cardIds = GeneratePairedRandomIds(totalSlots);
-        int index = 0;
+        List<int> cardIdList;
+        GameSaveData saveData;
 
-        // reset game state
-        if (MemoryGameController.Instance != null)
-            MemoryGameController.Instance.ResetState();
+        bool hasValidSave =
+            GameSaveManager.TryLoad(out saveData) &&
+            saveData.GridId == CurrentGridId &&
+            saveData.Rows == Rows &&
+            saveData.Columns == Columns &&
+            saveData.CardIdList != null &&
+            saveData.CardIdList.Count == totalSlots;
 
-        for (int r = 0; r < rows; r++)
+        if (hasValidSave)
         {
-            for (int c = 0; c < columns; c++)
+            cardIdList = new List<int>(saveData.CardIdList);
+        }
+        else
+        {
+            cardIdList = GeneratePairedRandomIds(totalSlots);
+            GameSaveManager.StartNewGame(CurrentGridId, Rows, Columns, cardIdList);
+        }
+
+        List<CardView> createdCards = new List<CardView>();
+        int cardListIndex = 0;
+
+        MemoryGameController.Instance.ResetState();
+
+        for (int rowIndex = 0; rowIndex < Rows; rowIndex++)
+        {
+            for (int columnIndex = 0; columnIndex < Columns; columnIndex++)
             {
-                if (!isEven && r == rows - 1 && c == columns - 1)
+                if (!isEvenSlotCount && rowIndex == Rows - 1 && columnIndex == Columns - 1)
                 {
-                    // Skip center card for odd count grids
                     continue;
                 }
 
-                Vector3 pos = new(startX + c * (cardSize + spacingX), startY - r * (cardSize + spacingY), 0);
-                GameObject cardObj = Instantiate(cardPrefab, pos, Quaternion.identity, transform);
+                int cardId = cardIdList[cardListIndex];
 
-                // cardObj.transform.localScale = new Vector3(scaleFactor, scaleFactor, 1);
+                if (cardId == -1)
+                {
+                    cardListIndex++;
+                    continue;
+                }
 
-                CardView view = cardObj.GetComponent<CardView>();
+                Vector3 position = new Vector3(
+                    startX + columnIndex * (CardSize + SpacingX),
+                    startY - rowIndex * (CardSize + SpacingY),
+                    0f);
 
-                int id = cardIds[index++];
-                view.Initialize(id, cardSpriteDataSO.GetSprite(id));
+                CardView cardInstance = Instantiate(CardPrefab, position, Quaternion.identity, transform);
 
-                // === NEW: register with game controller ===
-                if (MemoryGameController.Instance != null)
-                    MemoryGameController.Instance.RegisterCard(view);
+                cardInstance.SetCardIndex(cardListIndex);
+                cardInstance.Initialize(cardId, CardSpriteDatabase.GetSprite(cardId));
+
+                createdCards.Add(cardInstance);
+                MemoryGameController.Instance.RegisterCard(cardInstance);
+
+                cardListIndex++;
             }
         }
+
+        RevealCardsAtStart(createdCards);
     }
 
-    // === NEW helper for random pair IDs ===
-    private List<int> GeneratePairedRandomIds(int totalCards)
+    private void RevealCardsAtStart(List<CardView> cardList)
     {
-        List<int> ids = new List<int>(totalCards);
-        int pairCount = totalCards / 2;
-
-        for (int i = 0; i < pairCount; i++)
+        for (int i = 0; i < cardList.Count; i++)
         {
-            ids.Add(i);
-            ids.Add(i);
+            CardView cardView = cardList[i];
+            if (cardView == null)
+            {
+                continue;
+            }
+
+            cardView.Flip(true);
         }
 
-        // Fisher–Yates shuffle
-        for (int i = 0; i < ids.Count; i++)
+        DOVirtual.DelayedCall(2f, () =>
         {
-            int j = Random.Range(i, ids.Count);
-            int temp = ids[i];
-            ids[i] = ids[j];
-            ids[j] = temp;
+            for (int i = 0; i < cardList.Count; i++)
+            {
+                CardView cardView = cardList[i];
+                if (cardView == null)
+                {
+                    continue;
+                }
+
+                cardView.Flip(true);
+            }
+        });
+    }
+
+    private List<int> GeneratePairedRandomIds(int totalCardCount)
+    {
+        List<int> cardIdList = new List<int>(totalCardCount);
+        int pairCount = totalCardCount / 2;
+
+        for (int pairIndex = 0; pairIndex < pairCount; pairIndex++)
+        {
+            cardIdList.Add(pairIndex);
+            cardIdList.Add(pairIndex);
         }
 
-        return ids;
+        for (int i = 0; i < cardIdList.Count; i++)
+        {
+            int shuffleIndex = Random.Range(i, cardIdList.Count);
+            int temporaryCardId = cardIdList[i];
+            cardIdList[i] = cardIdList[shuffleIndex];
+            cardIdList[shuffleIndex] = temporaryCardId;
+        }
+
+        return cardIdList;
     }
 }

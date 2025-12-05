@@ -1,64 +1,43 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-[System.Serializable]
+[Serializable]
 public class CardSpriteData
 {
-    public int id;
-    public Sprite sprite;
+    public int Id;
+    public Sprite Sprite;
 }
 
-[CreateAssetMenu(fileName = "CardSpriteHandler", menuName = "Card System/Card Sprite Handler")]
+// [CreateAssetMenu(fileName = "CardSpriteHandler", menuName = "Card System/Card Sprite Handler")]
 public class CardSpriteHandlerSO : ScriptableObject
 {
-    [Header("Default Fallback Sprite")]
-    public Sprite defaultSprite;
+    [SerializeField] private Sprite DefaultSprite;
+    [SerializeField] private List<CardSpriteData> SpriteDataList = new List<CardSpriteData>();
+    private Dictionary<int, Sprite> SpriteLookupDictionary;
 
-    [Header("Sprite Mapping")]
-    public List<CardSpriteData> sprites = new List<CardSpriteData>();
-    // public List<Sprite> extraSprites = new List<Sprite>();
-
-    private Dictionary<int, Sprite> lookup;
-
-    /// <summary>
-    /// Builds lookup table — should be called once.
-    /// </summary>
     public void Initialize()
     {
-        lookup = new Dictionary<int, Sprite>();
+        SpriteLookupDictionary = new Dictionary<int, Sprite>();
 
-        foreach (var entry in sprites)
+        for (int i = 0; i < SpriteDataList.Count; i++)
         {
-            if (entry.sprite == null) continue;
-            if (!lookup.ContainsKey(entry.id))
-                lookup.Add(entry.id, entry.sprite);
+            CardSpriteData spriteData = SpriteDataList[i];
+            if (spriteData.Sprite == null) continue;
+
+            if (!SpriteLookupDictionary.ContainsKey(spriteData.Id))
+            {
+                SpriteLookupDictionary.Add(spriteData.Id, spriteData.Sprite);
+            }
         }
     }
 
-    public Sprite GetSprite(int id)
+    public Sprite GetSprite(int spriteId)
     {
-        if (lookup == null) Initialize();
+        if (SpriteLookupDictionary == null) Initialize();
 
-        if (lookup.TryGetValue(id, out Sprite sprite))
-            return sprite;
+        if (SpriteLookupDictionary.TryGetValue(spriteId, out Sprite sprite)) return sprite;
 
-        return defaultSprite;
+        return DefaultSprite;
     }
-
-    // [ContextMenu("Set Sprite From Data")]
-    // public void SetSpriteFromData()
-    // {
-    //     int count = 0;
-    //     sprites = new List<CardSpriteData>();
-    //     foreach (var sprite in extraSprites)
-    //     {
-    //         if (sprite == null) continue;
-    //         CardSpriteData data = new CardSpriteData
-    //         {
-    //             id = count++,
-    //             sprite = sprite
-    //         };
-    //         sprites.Add(data);
-    //     }
-    // }
 }

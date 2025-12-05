@@ -100,11 +100,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b017c07187d5ea647931ea53a0b853c9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  backSprite: {fileID: 8766648412799906064}
-  cardSprite: {fileID: 2971678746343951007}
-  cardObject: {fileID: 8224591554817899011}
-  flipDuration: 0.3
-  flipEase: 6
+  FrontSpriteRenderer: {fileID: 2971678746343951007}
+  CardBackRenderer: {fileID: 8224591554817899011}
+  FlipDuration: 0.3
+  FlipEase: 6
 --- !u!61 &7157250859541837565
 BoxCollider2D:
   m_ObjectHideFlags: 0

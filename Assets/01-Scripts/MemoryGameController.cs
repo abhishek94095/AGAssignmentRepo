@@ -1,98 +1,101 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 public class MemoryGameController : Singleton<MemoryGameController>
 {
-    [SerializeField] private float checkDelay = 0.1f; // wait a bit then check
+    public static Action<bool> TurnCompleted;
+    public static Action GameCompleted;
 
-    public static Action<bool> onTurnCompleted;
-    private CardView firstCard;
-    private CardView secondCard;
-    private bool isBusy;
+    private readonly List<CardView> FlippedCards = new List<CardView>();
 
     public override void Awake()
     {
         base.Awake();
     }
 
-    // called from grid when a card is created
-    public void RegisterCard(CardView card)
+    public void RegisterCard(CardView cardView)
     {
-        // who can flip
-        card.CanFlipCallback = CanFlipCard;
-
-        // when flip animation finishes
-        card.OnFlipCompleted += HandleCardFlipCompleted;
+        cardView.CanFlipCallback = CanFlipCard;
+        cardView.FlipCompletedCallback += HandleCardFlipCompleted;
     }
 
     public void ResetState()
     {
-        firstCard = null;
-        secondCard = null;
-        isBusy = false;
+        FlippedCards.Clear();
     }
 
-    private bool CanFlipCard(CardView card)
+    private bool CanFlipCard(CardView cardView)
     {
-        if (isBusy) return false;          // currently resolving a pair
-        if (card.IsFrontShowing) return false; // already face-up
-        return true;
+        return !cardView.IsFrontShowing;
     }
 
-    private void HandleCardFlipCompleted(CardView card)
+    private void HandleCardFlipCompleted(CardView cardView)
     {
-        // we only care when a card ends face-up
-        if (!card.IsFrontShowing)
-            return;
+        FlippedCards.Add(cardView);
+        StartCoroutine(ResolveCards());
+    }
 
-        if (firstCard == null)
+    private IEnumerator ResolveCards()
+    {
+        yield return new WaitForSeconds(0.15f);
+
+        if (FlippedCards.Count < 2)
         {
-            firstCard = card;
+            yield break;
         }
-        else if (secondCard == null && card != firstCard)
+
+        while (FlippedCards.Count >= 2)
         {
-            secondCard = card;
-            StartCoroutine(CheckMatchCoroutine());
-        }
-    }
+            CardView firstCard = FlippedCards[0];
+            CardView secondCard = FlippedCards[1];
 
-    private IEnumerator CheckMatchCoroutine()
-    {
-        isBusy = true;
+            bool cardsMatch = firstCard.CardId == secondCard.CardId;
 
-        // let the flip animation finish and show for a moment
-        yield return new WaitForSeconds(checkDelay);
-
-        if (firstCard != null && secondCard != null)
-        {
-            if (firstCard.CardId == secondCard.CardId)
+            if (cardsMatch)
             {
-                // MATCH -> destroy both
-                var a = firstCard.gameObject;
-                var b = secondCard.gameObject;
+                GameSaveManager.MarkCardDestroyed(firstCard.CardIndex);
+                GameSaveManager.MarkCardDestroyed(secondCard.CardIndex);
 
-                firstCard = null;
-                secondCard = null;
+                FlippedCards.Remove(firstCard);
+                FlippedCards.Remove(secondCard);
 
-                Destroy(a);
-                Destroy(b);
+                Destroy(firstCard.gameObject);
+                Destroy(secondCard.gameObject);
+
+                TurnCompleted?.Invoke(true);
+                SoundManager.Instance?.Play(SoundType.Match);
+
+                yield return new WaitForEndOfFrame();
+
+                if (HasGameFinished())
+                {
+                    SoundManager.Instance?.Play(SoundType.GameOver);
+                    GameCompleted?.Invoke();
+                }
             }
             else
             {
-                // MISMATCH -> flip them back
-                var a = firstCard;
-                var b = secondCard;
+                firstCard.Flip(true);
+                secondCard.Flip(true);
 
-                firstCard = null;
-                secondCard = null;
+                FlippedCards.Remove(firstCard);
+                FlippedCards.Remove(secondCard);
 
-                a.Flip();
-                b.Flip();
+                TurnCompleted?.Invoke(false);
+                SoundManager.Instance?.Play(SoundType.Mismatch);
+
+                yield return new WaitForSeconds(0.3f);
             }
-        }
 
-        isBusy = false;
-        onTurnCompleted?.Invoke(firstCard.CardId == secondCard.CardId);
+            yield return null;
+        }
+    }
+
+    private bool HasGameFinished()
+    {
+        CardView[] remainingCards = FindObjectsOfType<CardView>();
+        return remainingCards.Length == 0;
     }
 }
